@@ -11,9 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from storage import router as storage_router, init_storage, user_from_header
+from treasury import router as treasury_router
 
 app = FastAPI(title="BudgetIQ AI API", version="0.3.0")
 app.include_router(storage_router)
+app.include_router(treasury_router)
 app.add_event_handler("startup", init_storage)
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in __import__('os').environ.get('FRONTEND_ORIGIN','http://localhost:5500').split(',')], allow_methods=['GET','POST','PUT'], allow_headers=['*'])
 MAX_BYTES = 8 * 1024 * 1024

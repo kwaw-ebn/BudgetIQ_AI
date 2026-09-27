@@ -36,6 +36,16 @@ class Project(Base):
     version:Mapped[int]=mapped_column(Integer,default=1)
     document:Mapped[str]=mapped_column(Text)
     updated_at:Mapped[str]=mapped_column(String(40))
+class ProjectMember(Base):
+    __tablename__='budgetiq_project_members'
+    project_id:Mapped[str]=mapped_column(String(36),ForeignKey('budgetiq_projects.id'),primary_key=True)
+    user_id:Mapped[str]=mapped_column(String(36),ForeignKey('budgetiq_users.id'),primary_key=True)
+    role:Mapped[str]=mapped_column(String(20))
+
+def project_role(session:Session,p:Project,user:User):
+    if p.owner_id==user.id:return 'preparer'
+    member=session.get(ProjectMember,(p.id,user.id))
+    return member.role if member else None
 
 class Credentials(BaseModel):
     email:EmailStr
@@ -91,7 +101,8 @@ def login(body:Credentials,session:Session=Depends(db)):
 def me(user:User=Depends(user_from_header)):return {'email':user.email}
 @router.get('/projects')
 def list_projects(user:User=Depends(user_from_header),session:Session=Depends(db)):
-    return [serialize(p) for p in session.scalars(select(Project).where(Project.owner_id==user.id).order_by(Project.updated_at.desc())).all()]
+    shared=select(ProjectMember.project_id).where(ProjectMember.user_id==user.id)
+    return [dict(serialize(p),role=project_role(session,p,user)) for p in session.scalars(select(Project).where((Project.owner_id==user.id)|(Project.id.in_(shared))).order_by(Project.updated_at.desc())).all()]
 @router.post('/projects')
 def create_project(body:ProjectWrite,user:User=Depends(user_from_header),session:Session=Depends(db)):
     if len(session.scalars(select(Project).where(Project.owner_id==user.id)).all())>=50:raise HTTPException(400,'50 project limit reached')
@@ -100,13 +111,15 @@ def create_project(body:ProjectWrite,user:User=Depends(user_from_header),session
 @router.get('/projects/{project_id}')
 def get_project(project_id:str,user:User=Depends(user_from_header),session:Session=Depends(db)):
     p=session.get(Project,project_id)
-    if not p or p.owner_id!=user.id:raise HTTPException(404,'Project not found')
-    return serialize(p,True)
+    if not p or not project_role(session,p,user):raise HTTPException(404,'Project not found')
+    return dict(serialize(p,True),role=project_role(session,p,user))
 @router.put('/projects/{project_id}')
 def update_project(project_id:str,body:ProjectWrite,user:User=Depends(user_from_header),session:Session=Depends(db)):
     p=session.get(Project,project_id)
     if not p or p.owner_id!=user.id:raise HTTPException(404,'Project not found')
     if body.version!=p.version:raise HTTPException(409,'Project changed elsewhere. Reload before saving.')
+    from treasury import validate_plan_change
+    validate_plan_change(session,p,body.document)
     p.name=body.name;p.year=body.year;p.document=validate_document(body.document);p.version+=1;p.updated_at=datetime.now(timezone.utc).isoformat()
     session.commit();return serialize(p,True)
 

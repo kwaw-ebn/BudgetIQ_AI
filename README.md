@@ -1,4 +1,4 @@
-# BudgetIQ AI — full stack budget workspace (database branch)
+# BudgetIQ AI — full stack budget workspace
 
 BudgetIQ connects objectives, programmes, activities, costs, funding, execution and results. The example is a fictional Community Learning Centre. The FastAPI backend now includes authenticated, account-scoped project storage in PostgreSQL. The Render frontend and backend remain separate services.
 
@@ -10,13 +10,21 @@ Create a **dedicated PostgreSQL database** for BudgetIQ on a managed provider su
 - `AUTH_SECRET`: a new random secret of at least 32 bytes. For example, generate one locally with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and place it directly in Render environment settings.
 - `FRONTEND_ORIGIN`: `https://budgetiq-ai.onrender.com` (already configured).
 
-The API creates `budgetiq_users` and `budgetiq_projects` tables on startup when both settings are present. It refuses storage requests when either setting is absent. Configure database backups with the chosen provider before entering important records.
+The API creates its account, project, membership, treasury request and treasury event tables on startup when both settings are present. It refuses storage requests when either setting is absent. Configure database backups with the chosen provider before entering important records.
 
 ## What is saved
 
 Accounts and projects are saved on PostgreSQL. Passwords use salted PBKDF2 hashes; sign-in tokens expire after 24 hours. Projects have a server-generated ID, owner isolation, a version number for conflicting edits, and a 1 MB size limit. The browser keeps only the short-lived sign-in token in session storage and current in-memory edits until they are saved; it does not use localStorage for budget records. A complete JSON project backup remains available.
 
-This is still an early account system: it has no email verification, password reset, enforced reviewer roles, organization sharing, or production-grade abuse controls. Review decisions remain self reported. Do not treat the pilot as an approved financial system until these are implemented and security reviewed.
+This is still an early account system: it has no email verification, password reset or production-grade abuse controls. The original budget review log remains self reported. The separate Treasury pilot enforces reviewer and approver roles for its requests. Do not treat the pilot as an approved financial system before independent security and finance workflow review.
+
+## Treasury and commitment control pilot
+
+The Treasury tab gives each project a server-side expenditure request ledger. The owner can invite existing BudgetIQ accounts as reviewer and approver. A request follows draft → submitted → reviewed → approved → committed → invoiced → payment recorded. The API checks the project ceiling and linked activity budget before submission, review, approval and commitment. Submitted amounts reserve capacity; rejected requests release it. An owner cannot review their own request, and the reviewer cannot also approve that same request. A project edit cannot reduce the ceiling or activity cost below already reserved requests. The event history records the authenticated actor, action and timestamp.
+
+The invoice and payment steps record **references only**; they do not issue purchase orders, verify invoices, move money, connect to GIFMIS or reconcile a bank account. The older Execution tab remains a separate planning record and is not automatically reconciled with Treasury. In a production phase, implement verified supplier records, chart of accounts and fund codes, warrants/cash limits, line-item encumbrances, goods receipt, invoice matching, partial payments, reversals, period close, attachment controls and audited integrations. This pilot is inspired by public financial management controls, not affiliated with the Government of Ghana's GIFMIS.
+
+To try it, create a project with a ceiling and costed activity. Ask two collaborators to register their own accounts; invite one as reviewer and another as approver from the Treasury tab. Create and submit a request, then have each person sign in and perform the relevant step. Record a commitment, invoice reference and payment reference after approval.
 
 ## Budget features
 
@@ -40,4 +48,4 @@ For a temporary local development database, set `DATABASE_URL=sqlite:////tmp/bud
 2. Set `DATABASE_URL` and `AUTH_SECRET` in the Render API service.
 3. Deploy the API branch and check `/health`, registration, project create/read/update and account isolation.
 4. Deploy the frontend branch and confirm saving, reloading, export and sign out.
-5. Merge this branch after verifying the live services. The current main branch remains usable until then.
+5. Verify treasury role separation, reserved balances, and project isolation with test accounts before using the pilot for any real data.
