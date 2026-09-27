@@ -26,6 +26,12 @@ The invoice step records a user-entered invoice amount and delivery/service comp
 
 To try it, create a project with a ceiling and costed activity. Record an internal funding release for a source and quarter. Ask two collaborators to register their own accounts; invite one as reviewer and another as approver from the Treasury tab. Create a request against that source and quarter, submit it, then have each person sign in and perform the relevant step. After approval, record a commitment, matched invoice with delivery reference, and one or more payment references.
 
+## Procurement comparison pilot
+
+The **Procurement** tab connects a costed activity to a supplier comparison. The project owner creates an internal case with an estimate, proposed sourcing method, rationale, funding source, quarter and optional reference to an external system. A separately assigned procurement account enters supplier offers, records responsiveness and a technical score, declares no conflict of interest and writes a reasoned recommendation. One offer requires a specific explanation. A separate approver may return or approve the recommendation. Only then can the owner create a linked Treasury **draft** using the selected supplier and quoted price. Treasury still requires its own funding release, review, approval and commitment controls.
+
+This feature does not publish tenders, invite suppliers, validate supplier eligibility, determine the lawful procurement method or threshold, issue a purchase order, award a contract or communicate with GHANEPS or GIFMIS. Public entities must continue to use their applicable official systems and authorized processes. Quotes and external references are entered by users and have not been independently verified. A production procurement system would need controlled document attachments, solicitation and opening records, evaluator panels, eligibility verification, approvals by the legally competent authority, supplier and contract management, and integration approved by the relevant agencies.
+
 ## Budget features
 
 Upload DOCX, XLSX/XLSM, CSV or text based PDF action plans; review suggested activities; create detailed cost lines; set a funding ceiling; track projected and received revenue plus commitments and payments; compare quarters and scenario assumptions; create a next-year draft from actual payments; export PDF, CSV and a multi-sheet Excel workbook. Extraction is rules based and next-year estimates are arithmetic, not a trained AI model.
