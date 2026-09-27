@@ -6,11 +6,11 @@ import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from storage import router as storage_router, init_storage
+from storage import router as storage_router, init_storage, user_from_header
 
 app = FastAPI(title="BudgetIQ AI API", version="0.3.0")
 app.include_router(storage_router)
@@ -92,6 +92,63 @@ def candidates(rows:list[str]) -> list[dict]:
         if len(out)>=100:break
         out.append({'activity':clean[:250], 'category':match,'cost_item':'Activity cost','frequency':1,'people':1,'unit_price':0,'source':'Action plan','note':'Quantity and price require review'})
     return out
+
+FINANCIAL_STAGES = {'Original budget', 'Revised estimate', 'Provisional result', 'Audited actual'}
+FINANCIAL_METRICS = {'Revenue', 'Expenditure'}
+
+@app.post('/api/financial/import')
+async def import_financial_series(file: UploadFile=File(...), _user=Depends(user_from_header)):
+    """Validate a tidy annual financial series before a user chooses to save it."""
+    data, ext = await read_upload(file)
+    if ext not in {'.csv', '.xlsx', '.xlsm'}:
+        raise HTTPException(400, 'Financial series must be CSV or Excel')
+    try:
+        if ext == '.csv':
+            rows = list(csv.reader(io.StringIO(data.decode('utf-8-sig'))))
+        else:
+            from openpyxl import load_workbook
+            wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+            rows = list(wb.active.iter_rows(max_row=2002, max_col=12, values_only=True))
+            wb.close()
+    except Exception as exc:
+        raise HTTPException(422, f'Could not read financial series: {type(exc).__name__}') from exc
+    if not rows or len(rows)>2002:
+        raise HTTPException(422, 'File must contain a header and at most 2,000 observations')
+    headers=[str(v or '').strip().lower().replace(' ','_') for v in rows[0]]
+    required={'year','metric','stage','amount','currency','source'}
+    if not required.issubset(headers):
+        raise HTTPException(422, 'Required columns: year, metric, stage, amount, currency, source; optional: note')
+    positions={name:headers.index(name) for name in required | ({'note'} if 'note' in headers else set())}
+    accepted=[]; warnings=[]; seen=set(); currencies=set()
+    for index,row in enumerate(rows[1:],start=2):
+        if not any(v is not None and str(v).strip() for v in row):continue
+        def cell(name):
+            pos=positions.get(name)
+            return str(row[pos] if pos is not None and pos<len(row) and row[pos] is not None else '').strip()
+        try:
+            year=int(cell('year'))
+            amount=Decimal(cell('amount').replace(',',''))
+            if not 2000<=year<=2200 or not amount.is_finite() or amount<0:raise ValueError()
+        except (ValueError,InvalidOperation):
+            warnings.append(f'Row {index}: invalid year or amount; skipped')
+            continue
+        metric,stage,currency,source=cell('metric'),cell('stage'),cell('currency').upper(),cell('source')
+        if metric not in FINANCIAL_METRICS or stage not in FINANCIAL_STAGES or not re.fullmatch(r'[A-Z]{3}',currency) or not source:
+            warnings.append(f'Row {index}: invalid metric, stage, currency or source; skipped')
+            continue
+        key=(year,metric,stage)
+        if key in seen:
+            warnings.append(f'Row {index}: duplicate {year} {metric} {stage}; skipped')
+            continue
+        seen.add(key);currencies.add(currency)
+        accepted.append({'year':year,'metric':metric,'stage':stage,'amount':float(amount),'currency':currency,'source':source[:200],'note':cell('note')[:500]})
+    if len(currencies)>1:warnings.append('Multiple currencies found. Import only rows matching this project currency.')
+    for metric in FINANCIAL_METRICS:
+        actual_years=sorted(r['year'] for r in accepted if r['metric']==metric and r['stage']=='Audited actual')
+        if len(actual_years)>1:
+            missing=sorted(set(range(actual_years[0],actual_years[-1]+1))-set(actual_years))
+            if missing:warnings.append(f'{metric}: missing audited years {", ".join(map(str,missing))}')
+    return {'records':accepted,'warnings':warnings[:100],'total_rows':len(rows)-1}
 
 @app.get('/health')
 def health():return {'status':'ok'}
