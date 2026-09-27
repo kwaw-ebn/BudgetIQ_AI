@@ -158,14 +158,14 @@ async def import_financial_series(file: UploadFile=File(...), _user=Depends(user
 def health():return {'status':'ok'}
 
 @app.post('/api/plan/import')
-async def import_plan(file: UploadFile=File(...)):
+async def import_plan(file: UploadFile=File(...), _user=Depends(user_from_header)):
     data, ext=await read_upload(file)
     rows=extract(data,ext)
     items=candidates(rows)
     return {'lines':items,'message':f'Found {len(items)} possible activities. Review each one and enter verified prices.','extracted_rows':len(rows),'limitations':'Rules-based extraction; scanned PDFs require OCR and are not supported.'}
 
 @app.post('/api/history/import')
-async def import_history(file: UploadFile=File(...)):
+async def import_history(file: UploadFile=File(...), _user=Depends(user_from_header)):
     data,ext=await read_upload(file)
     rows=extract(data,ext)
     # Only explicit activity-like rows. Prior spending is context, never silently used as a current rate.
@@ -185,7 +185,7 @@ def display(value) -> str:
     return safe_cell(str(value if value is not None else ''))[:500]
 
 @app.post('/api/budget/export/{format}')
-def export_budget(format:Literal['xlsx','pdf','csv'], budget:Budget):
+def export_budget(format:Literal['xlsx','pdf','csv'], budget:Budget, _user=Depends(user_from_header)):
     if format=='csv':
         output=io.StringIO();writer=csv.writer(output)
         writer.writerow(['Activity','Category','Cost item','Frequency','People/units','Unit price','Total','Source','Review note'])

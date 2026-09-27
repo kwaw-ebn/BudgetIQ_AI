@@ -7,7 +7,7 @@ async function renderProcurement(){
   try{
     const id=projectId,state=await apiRequest(procurementPath());if(id!==projectId)return;
     procurementState=state;
-    $('proc-member-panel').hidden=state.role!=='preparer';$('proc-create-panel').hidden=state.role!=='preparer';
+    $('proc-member-panel').hidden=state.role!=='preparer'||!!currentProjectOrganizationId;$('proc-create-panel').hidden=state.role!=='preparer';
     $('proc-activity').innerHTML=state.activities.map(a=>`<option value="${clean(a.id)}">${clean(a.title)} · ${procurementMoney(a.planned)}</option>`).join('');
     $('proc-members').innerHTML=state.procurement_members.map(x=>`<div class="report-row"><span>${clean(x)}</span><b>Procurement</b></div>`).join('')||'<p class="muted">Assign a separate procurement evaluator.</p>';
     $('proc-cases').innerHTML=state.cases.length?state.cases.map(c=>{

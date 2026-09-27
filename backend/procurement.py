@@ -99,6 +99,7 @@ def view(c,quotes,handoff):
 @router.get('')
 def overview(project_id:str,user:User=Depends(user_from_header),session:Session=Depends(db)):
     p,role=scope(session,project_id,user)
+    if role not in ('preparer','procurement','approver'):raise HTTPException(404,'Project not found')
     cases=session.scalars(select(Case).where(Case.project_id==p.id).order_by(Case.created_at.desc())).all()
     ids=[c.id for c in cases]
     quotes=session.scalars(select(Quote).where(Quote.case_id.in_(ids))).all() if ids else []
@@ -111,9 +112,10 @@ def overview(project_id:str,user:User=Depends(user_from_header),session:Session=
 @router.post('/members')
 def assign_procurement(project_id:str,body:MemberInput,user:User=Depends(user_from_header),session:Session=Depends(db)):
     p,role=scope(session,project_id,user)
+    if p.organization_id:raise HTTPException(409,'Assign staff in organization access settings')
     if role!='preparer':raise HTTPException(403,'Only the project owner can assign procurement staff')
     target=session.scalar(select(User).where(User.email==str(body.email).lower()))
-    if not target:raise HTTPException(404,'That person must create a BudgetIQ account first')
+    if not target or target.status!='active':raise HTTPException(404,'Approved account not found')
     if target.id==user.id:raise HTTPException(409,'Use a separate account for procurement evaluation')
     member=session.get(ProjectMember,(p.id,target.id))
     if member:member.role='procurement'

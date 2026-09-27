@@ -95,7 +95,7 @@ def scope(session,project_id,user,lock=False):
     stmt=select(Project).where(Project.id==project_id)
     p=session.scalar(stmt.with_for_update() if lock else stmt)
     role=project_role(session,p,user) if p else None
-    if not role:raise HTTPException(404,'Project not found')
+    if role not in ('preparer','reviewer','approver'):raise HTTPException(404,'Project not found')
     return p,role
 
 def record(session,r,user,action,note=''):
@@ -176,9 +176,10 @@ def overview(project_id:str,user:User=Depends(user_from_header),session:Session=
 @router.post('/members')
 def add_member(project_id:str,body:MemberInput,user:User=Depends(user_from_header),session:Session=Depends(db)):
     p,role=scope(session,project_id,user)
+    if p.organization_id:raise HTTPException(409,'Assign staff in organization access settings')
     if p.owner_id!=user.id:raise HTTPException(403,'Only the project owner can assign roles')
     target=session.scalar(select(User).where(User.email==str(body.email).lower()))
-    if not target:raise HTTPException(404,'That person must create a BudgetIQ account first')
+    if not target or target.status!='active':raise HTTPException(404,'Approved account not found')
     if target.id==user.id:raise HTTPException(409,'A separate account is required for review or approval')
     member=session.get(ProjectMember,(p.id,target.id))
     if member:member.role=body.role

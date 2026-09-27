@@ -14,6 +14,8 @@ services:
         sync: false
       - key: AUTH_SECRET
         sync: false
+      - key: BUDGETIQ_ADMIN_EMAIL
+        sync: false
   - type: static
     name: budgetiq-ai
     rootDir: frontend

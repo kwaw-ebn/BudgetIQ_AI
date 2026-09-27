@@ -8,7 +8,7 @@ async function renderTreasury(){
     const id=projectId,state=await apiRequest(treasuryPath());if(id!==projectId)return;
     treasuryState=state;
     $('treasury-summary').innerHTML=metric('Budget ceiling',treasuryMoney(state.ceiling))+metric('Reserved requests',treasuryMoney(state.reserved))+metric('Available',treasuryMoney(state.available),Number(state.available)<0?'warn':'good');
-    $('treasury-member-panel').hidden=state.role!=='preparer';
+    $('treasury-member-panel').hidden=state.role!=='preparer'||!!currentProjectOrganizationId;
     $('treasury-release-panel').hidden=state.role!=='preparer';
     $('treasury-request-panel').hidden=state.role!=='preparer';
     $('treasury-releases').innerHTML=state.releases.map(x=>`<div class="report-row"><span>${clean(x.source)} · Q${x.quarter}</span><b>${treasuryMoney(x.amount)}</b></div>`).join('')||'<p class="muted">No internal funding releases recorded.</p>';
