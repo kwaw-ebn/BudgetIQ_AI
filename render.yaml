@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: budgetiq-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: FRONTEND_ORIGIN
+        value: https://budgetiq-ai.onrender.com
+  - type: static
+    name: budgetiq-ai
+    rootDir: frontend
+    buildCommand: echo 'Static frontend ready'
+    staticPublishPath: .
