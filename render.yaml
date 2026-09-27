@@ -10,6 +10,10 @@ services:
     envVars:
       - key: FRONTEND_ORIGIN
         value: https://budgetiq-ai.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
   - type: static
     name: budgetiq-ai
     rootDir: frontend
