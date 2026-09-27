@@ -32,6 +32,14 @@ class Budget(BaseModel):
     year: int = Field(default=2027, ge=2000, le=2200)
     currency: str = Field(default='GHS', max_length=10)
     lines: list[Line] = Field(max_length=2000)
+    ceiling: Decimal = Field(default=Decimal('0'), ge=0)
+    status: str = 'Draft'
+    objectives: list[dict] = Field(default_factory=list, max_length=500)
+    programmes: list[dict] = Field(default_factory=list, max_length=500)
+    activities: list[dict] = Field(default_factory=list, max_length=2000)
+    revenues: list[dict] = Field(default_factory=list, max_length=2000)
+    expenses: list[dict] = Field(default_factory=list, max_length=5000)
+    reviews: list[dict] = Field(default_factory=list, max_length=2000)
 
 async def read_upload(upload: UploadFile) -> tuple[bytes,str]:
     ext = Path(upload.filename or '').suffix.lower()
@@ -105,6 +113,13 @@ def safe_cell(value: str) -> str:
     """Prevent spreadsheet programs from interpreting uploaded text as formulas."""
     return "'" + value if value.lstrip().startswith(('=', '+', '-', '@')) else value
 
+def amount(value) -> Decimal:
+    try: return max(Decimal('0'), Decimal(str(value or 0)))
+    except (InvalidOperation, ValueError): return Decimal('0')
+
+def display(value) -> str:
+    return safe_cell(str(value if value is not None else ''))[:500]
+
 @app.post('/api/budget/export/{format}')
 def export_budget(format:Literal['xlsx','pdf','csv'], budget:Budget):
     if format=='csv':
@@ -127,6 +142,33 @@ def export_budget(format:Literal['xlsx','pdf','csv'], budget:Budget):
         for row in ws.iter_rows(min_row=4,max_row=end,min_col=6,max_col=7):
             for cell in row:cell.number_format='#,##0.00'
         ws.freeze_panes='A4'; b=io.BytesIO();wb.save(b);b.seek(0)
+        if budget.activities or budget.revenues or budget.expenses:
+            def sheet(name, headers, records):
+                tab=wb.create_sheet(name);tab.append(headers)
+                for record in records:tab.append([display(v) if isinstance(v,str) else v for v in record])
+                for cell in tab[1]:cell.font=Font(color='FFFFFF',bold=True);cell.fill=PatternFill('solid',fgColor='172554')
+                tab.freeze_panes='A2';tab.auto_filter.ref=tab.dimensions
+                for col in 'ABCDEFGHIJ':tab.column_dimensions[col].width=23
+                tab.column_dimensions['A'].width=42
+                return tab
+            obj={o.get('id'):o for o in budget.objectives};prog={p.get('id'):p for p in budget.programmes}
+            sheet('Objectives',['Objective','Result measure'],[(o.get('title',''),o.get('target','')) for o in budget.objectives])
+            sheet('Programmes',['Programme','Objective'],[(p.get('title',''),obj.get(p.get('objectiveId'),{}).get('title','')) for p in budget.programmes])
+            details=[]
+            for a in budget.activities:
+                p=prog.get(a.get('programmeId'),{});o=obj.get(p.get('objectiveId'),{})
+                for c in a.get('costs',[]):
+                    f=amount(c.get('frequency'));q=amount(c.get('quantity'));price=amount(c.get('unitPrice'))
+                    details.append([o.get('title',''),p.get('title',''),a.get('title',''),c.get('category',''),c.get('item',''),float(f),float(q),float(price),float(f*q*price),c.get('fundingSource',''),c.get('evidence',''),a.get('quarter',1)])
+            sheet('Detailed costing',['Objective','Programme','Activity','Category','Cost item','Frequency','Quantity','Unit price','Total','Funding source','Rate evidence','Quarter'],details)
+            sheet('Funding',['Source','Type','Projected','Received','Quarter'],[(r.get('name',''),r.get('type',''),float(amount(r.get('projected'))),float(amount(r.get('received'))),r.get('quarter',1)) for r in budget.revenues])
+            activity_names={a.get('id'):a.get('title','') for a in budget.activities}
+            sheet('Execution',['Activity','Description','Quarter','Committed','Paid'],[(activity_names.get(e.get('activityId'),''),e.get('description',''),e.get('quarter',1),float(amount(e.get('committed'))),float(amount(e.get('paid')))) for e in budget.expenses])
+            sheet('Results',['Objective','Programme','Activity','Expected','Delivered','Note'],[(obj.get(prog.get(a.get('programmeId'),{}).get('objectiveId'),{}).get('title',''),prog.get(a.get('programmeId'),{}).get('title',''),a.get('title',''),a.get('expectedResult',''),a.get('actualResult',''),a.get('resultNote','')) for a in budget.activities])
+            sheet('Review log',['Date','Name (self reported)','Role','Decision','Comment','Plan total'],[(r.get('at',''),r.get('name',''),r.get('role',''),r.get('decision',''),r.get('comment',''),float(amount(r.get('planTotal')))) for r in budget.reviews])
+            planned=sum(map(total,budget.lines),Decimal(0));paid=sum((amount(e.get('paid')) for e in budget.expenses),Decimal(0))
+            sheet('Summary',['Metric','Value'],[['Organization',budget.organization],['Year',budget.year],['Status (self reported)',budget.status],['Currency',budget.currency],['Full plan',float(planned)],['Ceiling',float(budget.ceiling)],['Funding gap',float(max(Decimal(0),planned-budget.ceiling))],['Projected revenue',float(sum((amount(r.get('projected')) for r in budget.revenues),Decimal(0)))],['Received revenue',float(sum((amount(r.get('received')) for r in budget.revenues),Decimal(0)))],['Paid',float(paid)],['Remaining against plan',float(planned-paid)]])
+            b=io.BytesIO();wb.save(b);b.seek(0)
         return StreamingResponse(b,media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':'attachment; filename="budgetiq-draft.xlsx"'})
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -140,5 +182,6 @@ def export_budget(format:Literal['xlsx','pdf','csv'], budget:Budget):
     rows.append(['TOTAL','','','','','',str(sum(map(total,budget.lines),Decimal(0)))])
     t=Table(rows,colWidths=[235,90,95,65,60,70,70],repeatRows=1,hAlign='LEFT')
     t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#172554')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),0.3,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP'),('BOTTOMPADDING',(0,0),(-1,-1),7)]))
-    content.extend([t,Spacer(1,12),Paragraph('DRAFT: Confirm rates, quantities, funding sources and approvals before use.',s['Normal'])]);doc.build(content);b.seek(0)
+    planned=sum(map(total,budget.lines),Decimal(0));paid=sum((amount(e.get('paid')) for e in budget.expenses),Decimal(0))
+    content.extend([t,Spacer(1,12),Paragraph(f'Ceiling: {budget.currency} {budget.ceiling} | Funding gap: {budget.currency} {max(Decimal(0),planned-budget.ceiling)} | Paid: {budget.currency} {paid}',s['Normal']),Spacer(1,8),Paragraph('DRAFT: Confirm rates, quantities, funding sources and approvals before use. Review decisions in the browser are self reported.',s['Normal'])]);doc.build(content);b.seek(0)
     return StreamingResponse(b,media_type='application/pdf',headers={'Content-Disposition':'attachment; filename="budgetiq-draft.pdf"'})
