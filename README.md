@@ -1,35 +1,35 @@
-# BudgetIQ AI — continuous budget cycle pilot
+# BudgetIQ AI — full stack budget workspace (database branch)
 
-A sector-neutral budget workspace for companies, agencies, schools, churches, NGOs and other organizations. The app connects **objectives → programmes → activities → detailed costs → results**, then records expected and received funding, commitments, payments, review decisions and next-year references. The UI includes a fictional Community Learning Centre example that users may choose to load.
+BudgetIQ connects objectives, programmes, activities, costs, funding, execution and results. The example is a fictional Community Learning Centre. The FastAPI backend now includes authenticated, account-scoped project storage in PostgreSQL. The Render frontend and backend remain separate services.
 
-## Current features
+## Database setup
 
-- Upload action plans in DOCX, XLSX/XLSM, CSV or text based PDF and review suggested activity rows. The extraction is rules based and scanned PDFs require OCR.
-- Split activities into cost lines for transport, venue, refreshments, materials, allowances, equipment, services or other needs. Track frequency, quantity, unit price, funding source, quarter and rate evidence.
-- Set an allocation ceiling, see the funding gap, compare the full plan with the available envelope and model a percentage price change. The reduced funding display is an envelope, not an automatic recommendation of which activities to cut.
-- Record projected versus received income and committed versus paid expenditure, grouped by activity and quarter.
-- Record a self-reported preparer, reviewer or approver decision. Editing a marked Approved draft reopens it.
-- Show programme totals, quarterly comparisons, expected versus delivered results and evidence counts.
-- Start a next-year draft from paid amounts by activity with an explicit price change assumption. This is an arithmetic reference, not a trained AI forecast; partial-year payments are incomplete evidence.
-- Export a detailed Excel workbook with objectives, programmes, cost lines, funding, execution, results, review log and summary; also download a PDF or CSV draft. Export and restore complete JSON project backups.
+Create a **dedicated PostgreSQL database** for BudgetIQ on a managed provider such as Neon, Supabase or paid Render PostgreSQL. Do not reuse a database that belongs to another application. In the Render `budgetiq-api` service, set:
 
-## Data and access limitations
+- `DATABASE_URL`: the provider's PostgreSQL connection string, including TLS parameters required by that provider. Set this in the Render environment settings only, never in GitHub or chat.
+- `AUTH_SECRET`: a new random secret of at least 32 bytes. For example, generate one locally with `python -c "import secrets; print(secrets.token_urlsafe(48))"` and place it directly in Render environment settings.
+- `FRONTEND_ORIGIN`: `https://budgetiq-ai.onrender.com` (already configured).
 
-Working projects are saved **only in this browser's local storage**, with optional user-controlled JSON backup. Clearing browser data or changing device loses the working draft unless it is exported and restored. This is a single-user pilot, with no shared workspace, authenticated identities, server-side approvals, database, backups or role enforcement. The API processes uploaded documents in memory and does not retain them. Do not use this public pilot for confidential institutional financial records. The application does not yet run a trained AI model. Rates, forecasts and approvals require independent institutional review.
+The API creates `budgetiq_users` and `budgetiq_projects` tables on startup when both settings are present. It refuses storage requests when either setting is absent. Configure database backups with the chosen provider before entering important records.
 
-A shared production release will require a durable database, account security, organization isolation, audit events and a backup/restore policy. The current Render workspace already uses its single free PostgreSQL allocation for another application; the browser-backed approach avoids changing that project or claiming durable multi-user storage.
+## What is saved
+
+Accounts and projects are saved on PostgreSQL. Passwords use salted PBKDF2 hashes; sign-in tokens expire after 24 hours. Projects have a server-generated ID, owner isolation, a version number for conflicting edits, and a 1 MB size limit. The browser keeps only the short-lived sign-in token in session storage and current in-memory edits until they are saved; it does not use localStorage for budget records. A complete JSON project backup remains available.
+
+This is still an early account system: it has no email verification, password reset, enforced reviewer roles, organization sharing, or production-grade abuse controls. Review decisions remain self reported. Do not treat the pilot as an approved financial system until these are implemented and security reviewed.
+
+## Budget features
+
+Upload DOCX, XLSX/XLSM, CSV or text based PDF action plans; review suggested activities; create detailed cost lines; set a funding ceiling; track projected and received revenue plus commitments and payments; compare quarters and scenario assumptions; create a next-year draft from actual payments; export PDF, CSV and a multi-sheet Excel workbook. Extraction is rules based and next-year estimates are arithmetic, not a trained AI model.
 
 ## Local development
 
-```bash
-cd backend
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn main:app --reload
-```
+For a temporary local development database, set `DATABASE_URL=sqlite:////tmp/budgetiq-local.db` and `AUTH_SECRET` to a development-only secret. Install `backend/requirements.txt`, then run `uvicorn main:app --reload` from `backend`. Serve `frontend` at port 5500 with `python -m http.server 5500 --directory frontend` from the repository root.
 
-In another terminal from the repository root, run `python -m http.server 5500 --directory frontend` and open `http://localhost:5500`. `frontend/config.js` selects the local API there and the deployed API elsewhere.
+## Deployment sequence
 
-## Render
-
-Separate frontend static site and API web service are deployed from this repository. `render.yaml` documents their configuration. Service names are `budgetiq-ai` and `budgetiq-api`. The API CORS setting must match the frontend URL.
+1. Provision a dedicated durable PostgreSQL database and backups.
+2. Set `DATABASE_URL` and `AUTH_SECRET` in the Render API service.
+3. Deploy the API branch and check `/health`, registration, project create/read/update and account isolation.
+4. Deploy the frontend branch and confirm saving, reloading, export and sign out.
+5. Merge this branch after verifying the live services. The current main branch remains usable until then.
